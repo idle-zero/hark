@@ -1,0 +1,95 @@
+name: Publish release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      endsWith(github.repository, '-priv') &&
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'release')
+
+    runs-on: windows-latest
+    environment: release
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout merged main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
+
+      - name: Read version
+        id: v
+        shell: bash
+        run: |
+          V=$(sed -n '/^\[workspace.package\]/,/^\[/p' Cargo.toml | \
+              grep '^version' | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "v=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Stage artifact
+        env:
+          V: ${{ steps.v.outputs.v }}
+        run: Move-Item target\release\hark.exe "hark-v$env:V.exe"
+
+      - name: Tag and push to both repos
+        env:
+          V: ${{ steps.v.outputs.v }}
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        shell: bash
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "v$V"
+          git push origin "v$V"
+          git remote add public "https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/idle-zero/hark.git"
+          git push public main:main --force-with-lease
+          git push public "v$V"
+
+      - name: Create GitHub Release on public
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          V: ${{ steps.v.outputs.v }}
+        shell: bash
+        run: |
+          gh release create "v$V" \
+            --repo idle-zero/hark \
+            --title "v$V" \
+            --generate-notes \
+            "hark-v$V.exe"
+
+      - name: Back-merge main into develop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.v.outputs.v }}
+        shell: bash
+        run: |
+          git fetch origin develop
+          git checkout -B backmerge origin/develop
+          if git merge origin/main --no-edit; then
+            git push origin backmerge:develop
+          else
+            git merge --abort
+            gh pr create \
+              --base develop --head main \
+              --title "back-merge: v$V" \
+              --body "Resolve conflicts manually."
+          fi

@@ -1,0 +1,28 @@
+name: Mirror source to public
+
+on:
+  push:
+    branches: [main]
+
+  workflow_dispatch:
+
+concurrency:
+  group: mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    if: endsWith(github.repository, '-priv')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push main to public
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          git remote add public "https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/idle-zero/hark.git"
+          git push public main:main --force-with-lease

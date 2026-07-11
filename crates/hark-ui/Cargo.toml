@@ -1,0 +1,13 @@
+[package]
+name = "hark-ui"
+version.workspace = true
+edition = "2024"
+
+[[bin]]
+name = "hark"
+path = "src/main.rs"
+
+[dependencies]
+hark-core = { path = "../hark-core" }
+hark-collector = { path = "../hark-collector" }
+iced = { version = "0.14", features = ["tokio"] }

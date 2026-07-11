@@ -1,0 +1,8 @@
+[package]
+name = "hark-collector"
+version.workspace = true
+edition = "2024"
+
+[dependencies]
+hark-core = { path = "../hark-core" }
+sysinfo = "0.39"

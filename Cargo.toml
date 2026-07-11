@@ -1,0 +1,6 @@
+[workspace]
+members = ["crates/hark-core", "crates/hark-collector", "crates/hark-ui"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.1"

@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    if: endsWith(github.repository, '-priv')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Verify on develop
+        shell: bash
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/develop" ] || { echo "dispatch from develop"; exit 1; }
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump workspace version
+        id: v
+        shell: bash
+        env:
+          BUMP: ${{ github.event.inputs.bump }}
+        run: |
+          CURRENT=$(sed -n '/^\[workspace.package\]/,/^\[/p' Cargo.toml | \
+                    grep '^version' | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          IFS='.' read -r major minor patch <<< "$CURRENT"
+          case "$BUMP" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          NEW="$major.$minor.$patch"
+          sed -i "/^\[workspace.package\]/,/^\[/ s/^version = \".*\"/version = \"$NEW\"/" Cargo.toml
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+
+      - name: Create release branch and commit
+        env:
+          V: ${{ steps.v.outputs.new }}
+        shell: bash
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "release/v$V"
+          git add -u
+          git commit -m "release: v$V"
+          git push origin "release/v$V"
+
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.v.outputs.new }}
+        shell: bash
+        run: |
+          gh pr create \
+            --base main --head "release/v$V" \
+            --title "release v$V" \
+            --body "Review and merge to publish release v$V." \
+            --label release
