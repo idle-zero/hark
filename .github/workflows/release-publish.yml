@@ -61,6 +61,7 @@ jobs:
           git tag "v$V"
           git push origin "v$V"
           git remote add public "https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/idle-zero/hark.git"
+          git fetch public main
           git push public main:main --force-with-lease
           git push public "v$V"
 
